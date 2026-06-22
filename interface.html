@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TakeMeter — Letterboxd Discourse Classifier</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f7f4; color: #1a1a1a; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 2rem; }
+  .card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; }
+  textarea { width: 100%; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.15s; }
+  textarea:focus { border-color: rgba(0,0,0,0.4); }
+  .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  button { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.15s; }
+  button:hover { opacity: 0.8; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .api-input { flex: 1; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: inherit; outline: none; }
+  .api-input:focus { border-color: rgba(0,0,0,0.4); }
+  .result { display: none; }
+  .result.visible { display: block; }
+  .label-pill { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; margin-right: 8px; }
+  .label-critique { background: #e6f1fb; color: #0c447c; }
+  .label-hot_take { background: #faeeda; color: #633806; }
+  .label-reaction { background: #e1f5ee; color: #085041; }
+  .confidence-bar { width: 100%; height: 6px; background: rgba(0,0,0,0.08); border-radius: 3px; margin-top: 10px; }
+  .confidence-fill { height: 100%; border-radius: 3px; background: #1a1a1a; transition: width 0.4s ease; }
+  .conf-label { font-size: 12px; color: #888; margin-top: 4px; }
+  .error { color: #a32d2d; font-size: 13px; margin-top: 8px; }
+  .spinner { display: none; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  .spinner.active { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .examples { margin-top: 1.5rem; }
+  .examples h3 { font-size: 13px; color: #888; font-weight: 400; margin-bottom: 8px; }
+  .example-btn { background: none; color: #444; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; margin: 0 4px 6px 0; transition: background 0.1s; text-align: left; max-width: 100%; }
+  .example-btn:hover { background: rgba(0,0,0,0.04); opacity: 1; }
+  .all-preds { margin-top: 12px; }
+  .pred-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+  .pred-name { width: 80px; color: #555; }
+  .pred-bar { flex: 1; height: 4px; background: rgba(0,0,0,0.08); border-radius: 2px; }
+  .pred-fill { height: 100%; border-radius: 2px; }
+  .fill-critique { background: #378add; }
+  .fill-hot_take { background: #ef9f27; }
+  .fill-reaction { background: #1d9e75; }
+  .pred-pct { width: 36px; text-align: right; color: #888; }
+  .note { font-size: 12px; color: #999; margin-top: 1rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>TakeMeter</h1>
+  <p class="subtitle">Letterboxd discourse classifier — critique, hot take, or reaction?</p>
+
+  <div class="card">
+    <label>Groq API key (not stored, used client-side only)</label>
+    <div class="row">
+      <input type="password" class="api-input" id="apiKey" placeholder="gsk_..." />
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Paste a Letterboxd post or comment</label>
+    <textarea id="postText" placeholder="e.g. Villeneuve strips the source material to its sensory core. The silence is the point..."></textarea>
+    <div class="row">
+      <button id="classifyBtn" onclick="classify()">
+        <span id="btnText">Classify</span>
+        <span class="spinner" id="spinner"></span>
+      </button>
+      <span class="error" id="errorMsg"></span>
+    </div>
+
+    <div class="examples">
+      <h3>Try an example</h3>
+      <button class="example-btn" onclick="setExample(this)">Parasite is overrated. Good movie. Not the generational masterpiece everyone decided it was.</button>
+      <button class="example-btn" onclick="setExample(this)">I was NOT prepared for that ending. Sat in my car for 20 minutes. My hands were shaking.</button>
+      <button class="example-btn" onclick="setExample(this)">Villeneuve strips the source material to its sensory core. Zimmer's score does more narrative work than any dialogue could.</button>
+    </div>
+  </div>
+
+  <div class="card result" id="resultCard">
+    <label>Prediction</label>
+    <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+      <span class="label-pill" id="labelPill">—</span>
+      <span id="confidenceText" style="font-size: 14px; font-weight: 500;"></span>
+    </div>
+    <div class="confidence-bar">
+      <div class="confidence-fill" id="confBar" style="width: 0%"></div>
+    </div>
+    <p class="conf-label" id="confLabel"></p>
+
+    <div class="all-preds" id="allPreds"></div>
+  </div>
+
+  <p class="note">This interface uses Groq's <code>llama-3.3-70b-versatile</code> with the same zero-shot prompt used for the baseline evaluation. Your API key is never sent anywhere except directly to Groq's API.</p>
+</div>
+
+<script>
+const SYSTEM_PROMPT = `You are classifying posts from r/Letterboxd, a film discussion community.
+Assign each post to exactly one of the following categories.
+
+critique: The post engages with specific elements of a film (direction, writing, performance, structure) and makes an argument about how they succeed or fail. The claim is grounded in the film itself.
+Example: "Villeneuve strips the source material to its sensory core. The silence is the point — Zimmer's score does more narrative work than any dialogue could."
+
+hot_take: The post makes a bold confident claim about a film's quality or legacy without supporting evidence. Assertion without argument.
+Example: "Parasite is overrated. Good movie. Not the generational masterpiece everyone decided it was."
+
+reaction: The post expresses an immediate emotional or visceral response to a film without structuring it into an argument.
+Example: "I was NOT prepared for that ending. Sat in my car for 20 minutes. My hands were shaking."
+
+Respond with ONLY a JSON object in this exact format:
+{"label": "critique", "confidence": 0.87, "scores": {"critique": 0.87, "hot_take": 0.08, "reaction": 0.05}}
+
+Use the label that best fits. Confidence and scores must sum to 1.0. No other text.`;
+
+function setExample(btn) {
+  document.getElementById('postText').value = btn.textContent.trim();
+  document.getElementById('resultCard').classList.remove('visible');
+}
+
+async function classify() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const text = document.getElementById('postText').value.trim();
+  const btn = document.getElementById('classifyBtn');
+  const spinner = document.getElementById('spinner');
+  const btnText = document.getElementById('btnText');
+  const errorMsg = document.getElementById('errorMsg');
+
+  errorMsg.textContent = '';
+
+  if (!apiKey) { errorMsg.textContent = 'Enter your Groq API key above.'; return; }
+  if (!text) { errorMsg.textContent = 'Paste a post to classify.'; return; }
+
+  btn.disabled = true;
+  spinner.classList.add('active');
+  btnText.textContent = 'Classifying...';
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: `Classify this post:\n\n${text}` }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const raw = data.choices[0].message.content.trim();
+    const parsed = JSON.parse(raw);
+
+    showResult(parsed);
+  } catch (e) {
+    errorMsg.textContent = e.message.includes('JSON') ? 'Could not parse response. Try again.' : e.message;
+  } finally {
+    btn.disabled = false;
+    spinner.classList.remove('active');
+    btnText.textContent = 'Classify';
+  }
+}
+
+function showResult(parsed) {
+  const { label, confidence, scores } = parsed;
+  const pct = Math.round(confidence * 100);
+
+  const pill = document.getElementById('labelPill');
+  pill.textContent = label.replace('_', ' ');
+  pill.className = `label-pill label-${label}`;
+
+  document.getElementById('confidenceText').textContent = `${pct}% confidence`;
+  document.getElementById('confBar').style.width = `${pct}%`;
+  document.getElementById('confLabel').textContent =
+    pct >= 80 ? 'High confidence' : pct >= 60 ? 'Moderate confidence' : 'Low confidence';
+
+  const allPreds = document.getElementById('allPreds');
+  const labels = ['critique', 'hot_take', 'reaction'];
+  allPreds.innerHTML = labels.map(l => {
+    const s = Math.round((scores[l] || 0) * 100);
+    return `<div class="pred-row">
+      <span class="pred-name">${l.replace('_', ' ')}</span>
+      <div class="pred-bar"><div class="pred-fill fill-${l}" style="width:${s}%"></div></div>
+      <span class="pred-pct">${s}%</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('resultCard').classList.add('visible');
+}
+</script>
+</body>
+</html>
