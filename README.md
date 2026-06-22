@@ -1,6 +1,5 @@
 # TakeMeter: Discourse Quality Classifier for Letterboxd
 
-**AI201 Project 3 | Arshad Shiju**
 
 TakeMeter is a fine-tuned text classifier that categorizes Letterboxd-style film discourse into three quality-distinct labels: `critique`, `hot_take`, and `reaction`. The goal is to distinguish substantive film analysis from bold-but-unsupported opinions and raw emotional responses — distinctions that matter to anyone who participates in film communities.
 
